@@ -1,15 +1,10 @@
-// src/pages/Produk.jsx
 import { useEffect, useState, useCallback } from "react";
 
 /*
-  Produk.jsx
-  - expects proxied endpoints (see vite.config.js):
-    GET  /api/get-produk
-    POST /api/auth2/create-produk
-    PUT  /api/auth2/update-produk/:id
-    DELETE /api/auth2/delete-produk/:id
-
-  - token: localStorage.getItem("token") || import.meta.env.VITE_API_TOKEN
+  Produk.jsx (updated)
+  - Default active tab = "Semua Produk"
+  - Menghapus tombol "Order" dari card aksi
+  - Fetch list from /api/get-produk (proxy)
 */
 
 const API_GET = "/api/get-produk";
@@ -27,14 +22,14 @@ export default function Produk() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // UI states
-  const [activeCategory, setActiveCategory] = useState(null);
+  // UI state
+  // default active category is "Semua Produk"
+  const [activeCategory, setActiveCategory] = useState("Semua Produk");
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null); // product object or null for create
+  const [editing, setEditing] = useState(null); // null = create, else product object
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  // form state
-  const emptyForm = {
+  const initialForm = {
     judul: "",
     gambar: "",
     deskripsi: "",
@@ -43,7 +38,7 @@ export default function Produk() {
     point: 0,
     stock: 0,
   };
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
 
   const fetchList = useCallback(async () => {
@@ -56,7 +51,7 @@ export default function Produk() {
           "Content-Type": "application/json",
           ...getAuthHeader(),
         },
-        credentials: "omit", // using proxy; change to "include" only if backend requires cookies and CORS allows it
+        credentials: "omit",
       });
 
       const text = await res.text();
@@ -67,12 +62,17 @@ export default function Produk() {
         throw { status: res.status, body: data ?? text };
       }
 
-      // Expect shape: { data: { "Dessert": [], "Makanan": [...], "Minuman": [] }, message: "..." }
+      // Expect: { data: { "Makanan": [...], "Minuman": [...], ... }, message }
       const groupedData = data?.data ?? {};
+
+      // ensure categories include "Semua Produk" when displayed
       setGrouped(groupedData);
 
+      // if current activeCategory is not present in keys and not "Semua Produk", fallback
       const cats = Object.keys(groupedData);
-      if (cats.length && !activeCategory) setActiveCategory(cats[0]);
+      if (activeCategory !== "Semua Produk" && !cats.includes(activeCategory)) {
+        setActiveCategory("Semua Produk");
+      }
     } catch (err) {
       console.error("Fetch produk error:", err);
       setError(err);
@@ -82,36 +82,40 @@ export default function Produk() {
   }, [activeCategory]);
 
   useEffect(() => {
+    // on mount fetch and set default active
+    setActiveCategory("Semua Produk");
     fetchList();
-  }, [fetchList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
 
+  // open create modal
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm(initialForm);
     setShowModal(true);
   };
 
-  const openEdit = (p) => {
-    setEditing(p);
+  // open edit modal -> fill form
+  const openEdit = (product) => {
+    setEditing(product);
     setForm({
-      judul: p.judul ?? "",
-      gambar: p.gambar ?? "",
-      deskripsi: p.deskripsi ?? "",
-      kategori: p.kategori ?? "",
-      harga: Number(String(p.harga).replace(/\D/g, "")) || 0,
-      point: p.point ?? 0,
-      stock: p.stock ?? 0,
+      judul: product.judul || "",
+      gambar: product.gambar || "",
+      deskripsi: product.deskripsi || "",
+      kategori: product.kategori || "",
+      harga: Number((product.harga || 0).toString().replace(/\D/g, "")) || 0,
+      point: product.point ?? 0,
+      stock: product.stock ?? 0,
     });
     setShowModal(true);
   };
 
-  const onChange = (key, value) => setForm((s) => ({ ...s, [key]: value }));
+  const onChange = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   const saveProduct = async () => {
     setSaving(true);
     setError(null);
 
-    // basic validation
     if (!form.judul || !form.kategori) {
       setError({ message: "Judul dan kategori harus diisi" });
       setSaving(false);
@@ -144,11 +148,10 @@ export default function Produk() {
 
       const text = await res.text();
       let data;
-      try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
+      try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
 
       if (!res.ok) throw { status: res.status, body: data ?? text };
 
-      // success: refresh list
       await fetchList();
       setShowModal(false);
       setEditing(null);
@@ -160,15 +163,10 @@ export default function Produk() {
     }
   };
 
-  const confirmDeleteProduct = async (p) => {
-    setConfirmDelete(p);
-  };
-
-  const doDelete = async () => {
-    if (!confirmDelete) return;
+  const deleteProduct = async (product) => {
     setError(null);
     try {
-      const res = await fetch(API_DELETE(confirmDelete.id), {
+      const res = await fetch(API_DELETE(product.id), {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -177,11 +175,12 @@ export default function Produk() {
         credentials: "omit",
       });
 
-      const text = await res.text();
-      let data;
-      try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
-
-      if (!res.ok) throw { status: res.status, body: data ?? text };
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        let body;
+        try { body = text ? JSON.parse(text) : text; } catch(e){ body = text; }
+        throw { status: res.status, body };
+      }
 
       await fetchList();
       setConfirmDelete(null);
@@ -192,17 +191,35 @@ export default function Produk() {
   };
 
   const formatPrice = (val) => {
-    if (typeof val === "number") return "Rp. " + val.toLocaleString("id-ID");
+    if (typeof val === "number") {
+      return "Rp. " + val.toLocaleString("id-ID");
+    }
     return val;
   };
+
+  // helper to produce list shown depending on activeCategory
+  const getDisplayedList = () => {
+    if (activeCategory === "Semua Produk") {
+      // flatten all categories
+      const all = [];
+      Object.values(grouped).forEach((arr) => {
+        if (Array.isArray(arr)) all.push(...arr);
+      });
+      return all;
+    }
+    return grouped[activeCategory] || [];
+  };
+
+  // categories for tabs (keep order)
+  const categories = ["Semua Produk", ...Object.keys(grouped)];
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Produk</h2>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <button onClick={fetchList} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">Refresh</button>
-          <button onClick={openCreate} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">+ Create Produk</button>
+          <button onClick={openCreate} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">+ Tambah Produk</button>
         </div>
       </div>
 
@@ -214,107 +231,71 @@ export default function Produk() {
         </div>
       )}
 
+      {/* category tabs */}
       <div className="mb-4">
         <div className="flex gap-2 flex-wrap">
-          {Object.keys(grouped).length === 0 ? (
+          {categories.length === 0 ? (
             <span className="text-sm text-gray-500">No categories</span>
           ) : (
-            Object.keys(grouped).map((cat) => (
+            categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
                 className={`px-3 py-1 rounded-lg text-sm font-medium ${activeCategory === cat ? "bg-blue-600 text-white" : "bg-white border"}`}
               >
-                {cat} <span className="ml-2 text-xs text-gray-500">({grouped[cat]?.length || 0})</span>
+                {cat} <span className="ml-2 text-xs text-gray-500">{cat === "Semua Produk" ? (() => {
+                  // count total items
+                  const all = [];
+                  Object.values(grouped).forEach((a)=>{ if(Array.isArray(a)) all.push(...a)});
+                  return `(${all.length})`;
+                })() : `(${(grouped[cat]||[]).length})`}</span>
               </button>
             ))
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        {(!activeCategory || !grouped[activeCategory] || grouped[activeCategory].length === 0) ? (
-          <div className="p-6 text-center text-gray-500">Tidak ada produk pada kategori ini.</div>
+      {/* product list grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {getDisplayedList().length === 0 ? (
+          <div className="col-span-full p-6 text-center text-gray-500">Tidak ada produk pada kategori ini.</div>
         ) : (
-          <>
-            <div className="hidden md:block">
-              <table className="w-full table-auto">
-                <thead>
-                  <tr className="bg-blue-600 text-white text-left">
-                    <th className="p-4">#</th>
-                    <th className="p-4">Gambar</th>
-                    <th className="p-4">Judul</th>
-                    <th className="p-4">Deskripsi</th>
-                    <th className="p-4">Harga</th>
-                    <th className="p-4">Point</th>
-                    <th className="p-4">Stock</th>
-                    <th className="p-4">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {grouped[activeCategory].map((p, i) => (
-                    <tr key={p.id} className="border-b hover:bg-gray-50">
-                      <td className="p-4 align-top">{i + 1}</td>
-                      <td className="p-4">
-                        {p.gambar ? (
-                          <img src={p.gambar} alt={p.judul} className="w-20 h-14 object-cover rounded" />
-                        ) : (
-                          <div className="w-20 h-14 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-500">No image</div>
-                        )}
-                      </td>
-                      <td className="p-4 align-top font-medium">{p.judul}</td>
-                      <td className="p-4 align-top text-sm text-gray-600">{p.deskripsi}</td>
-                      <td className="p-4 align-top">{formatPrice(p.harga)}</td>
-                      <td className="p-4 align-top">{p.point}</td>
-                      <td className="p-4 align-top">{p.stock}</td>
-                      <td className="p-4 align-top">
-                        <div className="flex gap-2">
-                          <button onClick={() => openEdit(p)} className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit</button>
-                          <button onClick={() => confirmDeleteProduct(p)} className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700">Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          getDisplayedList().map((p, i) => (
+            <div key={p.id ?? i} className="bg-white rounded-lg shadow p-4">
+              <div className="h-40 bg-gray-100 rounded mb-3 overflow-hidden flex items-center justify-center">
+                {p.gambar ? (
+                  <img src={p.gambar} alt={p.judul} className="w-full h-full object-cover"/>
+                ) : (
+                  <div className="text-sm text-gray-400">No image</div>
+                )}
+              </div>
 
-            <div className="md:hidden p-4 space-y-4">
-              {grouped[activeCategory].map((p, i) => (
-                <div key={p.id} className="border rounded p-3 flex gap-3">
-                  {p.gambar ? (
-                    <img src={p.gambar} alt={p.judul} className="w-20 h-16 object-cover rounded" />
-                  ) : (
-                    <div className="w-20 h-16 bg-gray-100 rounded" />
-                  )}
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">{p.judul}</div>
-                        <div className="text-xs text-gray-500">{p.kategori}</div>
-                      </div>
-                      <div className="text-sm font-bold">{formatPrice(p.harga)}</div>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-2">{p.deskripsi}</div>
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => openEdit(p)} className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Edit</button>
-                      <button onClick={() => confirmDeleteProduct(p)} className="px-3 py-1 bg-red-600 text-white rounded text-sm">Delete</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <div className="mb-2">
+                <div className="text-sm text-blue-600 inline-block bg-blue-50 px-2 py-1 rounded-full">{p.kategori}</div>
+                <div className="float-right text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">{p.stock} tersedia</div>
+              </div>
+
+              <h3 className="text-lg font-semibold mb-1">{p.judul}</h3>
+              <div className="text-blue-600 font-bold mb-2">{formatPrice(p.harga)}</div>
+              <div className="text-sm text-gray-600 mb-3">{p.deskripsi}</div>
+
+              <div className="flex gap-2">
+                <button onClick={() => openEdit(p)} className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">Edit</button>
+                <button onClick={() => setConfirmDelete(p)} className="px-3 py-1 bg-red-100 text-red-700 rounded">Hapus</button>
+                {/* Order button removed as requested */}
+              </div>
             </div>
-          </>
+          ))
         )}
       </div>
 
-      {/* Create / Edit Modal */}
+      {/* Modal: Create / Edit */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg overflow-auto max-h-[90vh]">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">{editing ? "Edit Produk" : "Create Produk"}</h3>
-              <div>
+              <div className="flex items-center gap-2">
                 <button onClick={() => { setShowModal(false); setEditing(null); }} className="px-3 py-1 bg-gray-200 rounded">Close</button>
               </div>
             </div>
@@ -324,11 +305,13 @@ export default function Produk() {
                 <label className="block text-sm font-medium">Judul</label>
                 <input value={form.judul} onChange={(e) => onChange("judul", e.target.value)} className="w-full border rounded p-2" />
               </div>
+
               <div>
                 <label className="block text-sm font-medium">Gambar (URL)</label>
                 <input value={form.gambar} onChange={(e) => onChange("gambar", e.target.value)} className="w-full border rounded p-2" />
                 {form.gambar && <img src={form.gambar} alt="preview" className="mt-2 w-32 h-20 object-cover rounded" />}
               </div>
+
               <div>
                 <label className="block text-sm font-medium">Deskripsi</label>
                 <textarea value={form.deskripsi} onChange={(e) => onChange("deskripsi", e.target.value)} className="w-full border rounded p-2" rows={3} />
@@ -340,7 +323,7 @@ export default function Produk() {
                   <input value={form.kategori} onChange={(e) => onChange("kategori", e.target.value)} className="w-full border rounded p-2" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Harga</label>
+                  <label className="block text-sm font-medium">Harga (number)</label>
                   <input type="number" value={form.harga} onChange={(e) => onChange("harga", e.target.value)} className="w-full border rounded p-2" />
                 </div>
                 <div>
@@ -364,15 +347,15 @@ export default function Produk() {
         </div>
       )}
 
-      {/* Delete confirm */}
+      {/* Delete confirmation */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded p-4 max-w-md w-full">
             <div className="font-semibold mb-2">Hapus Produk</div>
-            <div className="text-sm text-gray-600 mb-4">Yakin hapus <strong>{confirmDelete.judul}</strong>?</div>
+            <div className="text-sm text-gray-600 mb-4">Yakin ingin menghapus <strong>{confirmDelete.judul}</strong>?</div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmDelete(null)} className="px-3 py-1 bg-gray-200 rounded">Batal</button>
-              <button onClick={doDelete} className="px-3 py-1 bg-red-600 text-white rounded">Hapus</button>
+              <button onClick={() => deleteProduct(confirmDelete)} className="px-3 py-1 bg-red-600 text-white rounded">Hapus</button>
             </div>
             {error && <pre className="mt-3 text-xs text-red-600">{JSON.stringify(error, null, 2)}</pre>}
           </div>
