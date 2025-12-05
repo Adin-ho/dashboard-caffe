@@ -218,7 +218,7 @@ export default function Produk() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Produk</h2>
         <div className="flex items-center gap-3">
-          <button onClick={fetchList} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">Refresh</button>
+          {/* <button onClick={fetchList} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">Refresh</button> */}
           <button onClick={openCreate} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">+ Tambah Produk</button>
         </div>
       </div>

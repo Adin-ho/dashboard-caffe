@@ -9,7 +9,8 @@ import axios from "axios";
  * - Pagination sederhana (Prev / Next)
  * - Requires token in localStorage.token (Bearer)
  *
- * NOTE: tombol Print telah dihapus sesuai permintaan.
+ * Perubahan: setiap struk kini menggunakan layout flex column sehingga
+ * footer ("Terima kasih...") selalu berada di bagian bawah kartu.
  */
 
 export default function Order() {
@@ -24,9 +25,9 @@ export default function Order() {
   // store info (customize)
   const storeInfo = {
     name: "KEDAI GENZ",
-    addressLine1: "Jl. Contoh No.123",
-    addressLine2: "Jakarta Timur",
-    phone: "0812-XXXX-XXXX",
+    addressLine1: "Jl. KH Noer Ali No.23",
+    addressLine2: "Bekasi Selatan, Kota Bekasi",
+    phone: "0812-3456-7890",
     footerNote: "Terima kasih telah berbelanja",
   };
 
@@ -141,86 +142,92 @@ export default function Order() {
             const potonganAmount = Math.max(0, subtotal - afterCoupon);
 
             return (
+              // make each article full height and column-flex so footer stays bottom
               <article
                 key={startIndex + idx}
-                className="bg-white border rounded-md shadow-sm p-4 text-sm print:shadow-none print:border-0"
+                className="bg-white border rounded-md shadow-sm p-4 text-sm print:shadow-none print:border-0 flex flex-col h-full"
                 aria-label={`Struk ${startIndex + idx + 1}`}
               >
-                {/* header */}
-                <div className="text-center mb-2">
-                  <div className="font-semibold">{storeInfo.name}</div>
-                  <div className="text-xs text-gray-600">{storeInfo.addressLine1}</div>
-                  <div className="text-xs text-gray-600">{storeInfo.addressLine2}</div>
-                  <div className="text-xs text-gray-600">Tel: {storeInfo.phone}</div>
-                  <div className="my-2 text-[12px] text-gray-300">────────────────</div>
-                </div>
-
-                {/* meta */}
-                <div className="flex justify-between text-[12px] text-gray-600 mb-2">
-                  <div>
-                    <div className="text-xs">No. Order</div>
-                    <div className="font-mono">{order.id ?? `#${startIndex + idx + 1}`}</div>
+                {/* content that grows (header/meta/items/summary) */}
+                <div className="flex-1 flex flex-col">
+                  {/* header */}
+                  <div className="text-center mb-2">
+                    <div className="font-semibold">{storeInfo.name}</div>
+                    <div className="text-xs text-gray-600">{storeInfo.addressLine1}</div>
+                    <div className="text-xs text-gray-600">{storeInfo.addressLine2}</div>
+                    <div className="text-xs text-gray-600">Tel: {storeInfo.phone}</div>
+                    <div className="my-2 text-[12px] text-gray-300">────────────────</div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xs">Tanggal</div>
-                    <div className="font-mono">{order.tanggal ?? "-"}</div>
-                  </div>
-                </div>
 
-                {/* items */}
-                <div className="border-t border-b py-2 text-[13px]">
-                  {items.length === 0 ? (
-                    <div className="text-gray-500">Tidak ada item</div>
-                  ) : (
-                    items.map((it) => (
-                      <div key={it.id} className="mb-2">
-                        <div className="flex justify-between items-start">
-                          <div className="w-2/3">
-                            <div className="font-medium">{it.nama}</div>
-                            <div className="text-xs text-gray-500">{it.keterangan ?? ""}</div>
-                          </div>
-                          <div className="w-1/3 text-right font-mono">
-                            <div className="text-xs text-gray-600">{it.quantity} x {formatIDR(it.harga)}</div>
-                            <div className="text-sm font-semibold">{formatIDR(lineSubtotal(it))}</div>
+                  {/* meta */}
+                  <div className="flex justify-between text-[12px] text-gray-600 mb-2">
+                    <div>
+                      <div className="text-xs">No. Order</div>
+                      <div className="font-mono">{order.id ?? `#${startIndex + idx + 1}`}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs">Tanggal</div>
+                      <div className="font-mono">{order.tanggal ?? "-"}</div>
+                    </div>
+                  </div>
+
+                  {/* items */}
+                  <div className="border-t border-b py-2 text-[13px] flex-1">
+                    {items.length === 0 ? (
+                      <div className="text-gray-500">Tidak ada item</div>
+                    ) : (
+                      items.map((it) => (
+                        <div key={it.id} className="mb-3">
+                          <div className="flex justify-between items-start">
+                            <div className="w-2/3">
+                              <div className="font-medium">{it.nama}</div>
+                              <div className="text-xs text-gray-500">{it.keterangan ?? ""}</div>
+                            </div>
+                            <div className="w-1/3 text-right font-mono">
+                              <div className="text-xs text-gray-600">{it.quantity} x {formatIDR(it.harga)}</div>
+                              <div className="text-sm font-semibold">{formatIDR(lineSubtotal(it))}</div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* summary */}
-                <div className="mt-3 text-[13px]">
-                  <div className="flex justify-between border-b pb-1 text-gray-600">
-                    <div>HARGA JUAL</div>
-                    <div className="font-mono">{formatIDR(subtotal)}</div>
+                      ))
+                    )}
                   </div>
 
-                  {kupon ? (
-                    <>
-                      <div className="flex justify-between mt-2 text-green-700">
-                        <div className="text-sm">Kupon ({kupon.code ?? kupon.code_id ?? "-"})</div>
-                        <div className="font-mono">-{kupon.potongan ? `${kupon.potongan}%` : formatIDR(potonganAmount)}</div>
-                      </div>
-                      <div className="flex justify-between mt-2 font-semibold text-base">
+                  {/* summary */}
+                  <div className="mt-3 text-[13px]">
+                    <div className="flex justify-between border-b pb-1 text-gray-600">
+                      <div>HARGA JUAL</div>
+                      <div className="font-mono">{formatIDR(subtotal)}</div>
+                    </div>
+
+                    {kupon ? (
+                      <>
+                        <div className="flex justify-between mt-2 text-green-700">
+                          <div className="text-sm">Kupon ({kupon.code ?? kupon.code_id ?? "-"})</div>
+                          <div className="font-mono">-{kupon.potongan ? `${kupon.potongan}%` : formatIDR(potonganAmount)}</div>
+                        </div>
+                        <div className="flex justify-between mt-2 font-semibold text-base">
+                          <div>TOTAL</div>
+                          <div>{formatIDR(afterCoupon)}</div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between mt-3 font-semibold text-base">
                         <div>TOTAL</div>
                         <div>{formatIDR(afterCoupon)}</div>
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex justify-between mt-3 font-semibold text-base">
-                      <div>TOTAL</div>
-                      <div>{formatIDR(afterCoupon)}</div>
-                    </div>
-                  )}
+                    )}
 
-                  {order.kupon?.keterangan && (
-                    <div className="mt-2 text-[11px] text-gray-500">{order.kupon.keterangan}</div>
-                  )}
+                    {order.kupon?.keterangan && (
+                      <div className="mt-2 text-[11px] text-gray-500">{order.kupon.keterangan}</div>
+                    )}
+                  </div>
                 </div>
 
-                {/* footer small */}
-                <div className="mt-3 text-xs text-center text-gray-500">{storeInfo.footerNote}</div>
+                {/* footer - tetap di bawah karena article adalah flex column */}
+                <div className="mt-3 text-xs text-center text-gray-500 pt-3 border-t">
+                  {storeInfo.footerNote}
+                </div>
               </article>
             );
           })}
@@ -257,7 +264,6 @@ export default function Order() {
           body * { visibility: hidden; }
           article, article * { visibility: visible; }
           article { page-break-inside: avoid; margin: 0; }
-          /* Show only the receipts container (articles) */
         }
       `}</style>
     </div>

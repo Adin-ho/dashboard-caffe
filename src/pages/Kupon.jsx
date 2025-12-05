@@ -1,13 +1,15 @@
+// src/pages/Kupon.jsx
 import { useCallback, useEffect, useState } from "react";
 
 /**
  * Kupon.jsx
- * - Menyesuaikan kupon_type valid values sesuai backend:
- *   ["free_item","diskon","potongan_kategori","potongan_rupiah"]
- * - Validasi klien sebelum submit
- * - Tampilkan pesan error server bila ada
  *
- * Endpoints (via /api proxy recommended):
+ * - kupon_type allowed: ["free_item","diskon","potongan_kategori","potongan_rupiah"]
+ * - insentif is a dropdown: bronze | silver | gold
+ * - Uses token from localStorage.token (Bearer). If token not found, uses credentials: "include"
+ *   to support cookie-based session (backend must allow credentials).
+ *
+ * Endpoints (use vite proxy /api/... in dev recommended):
  * GET    /api/auth2/get-all-kupon
  * POST   /api/auth2/create-kupon
  * PUT    /api/auth2/update-kupon/:id   (fallback PUT /api/auth2/update-kupon)
@@ -21,10 +23,33 @@ const API_UPDATE = "/api/auth2/update-kupon";
 const API_DELETE = "/api/auth2/delete-kupon";
 
 const allowedTypes = ["free_item", "diskon", "potongan_kategori", "potongan_rupiah"];
+const allowedInsentif = ["bronze", "silver", "gold"];
 
-const getAuthHeader = () => {
-  const token = localStorage.getItem("token") || import.meta.env.VITE_API_TOKEN || "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
+const getToken = () => {
+  try {
+    return localStorage.getItem("token") || null;
+  } catch {
+    return null;
+  }
+};
+
+const buildFetchOptions = (method = "GET", body = null) => {
+  const token = getToken();
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const opts = {
+    method,
+    headers,
+  };
+
+  // for JSON body
+  if (body != null) opts.body = JSON.stringify(body);
+
+  // credentials: include if no token (to support cookie session)
+  opts.credentials = token ? "omit" : "include";
+
+  return opts;
 };
 
 export default function Kupon() {
@@ -59,20 +84,30 @@ export default function Kupon() {
     setLoading(true);
     setError(null);
     setServerMessage(null);
+
     try {
-      const res = await fetch(API_LIST, {
-        method: "GET",
-        headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        credentials: "omit",
-      });
+      const res = await fetch(API_LIST, buildFetchOptions("GET"));
       const text = await res.text();
       let data;
-      try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (e) {
+        data = null;
+      }
 
       if (!res.ok) throw { status: res.status, body: data ?? text };
 
       // Normalize: backend returns { data: [...] } or similar
-      const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : (data?.data ? (Array.isArray(data.data) ? data.data : [data.data]) : []);
+      const list = Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : data?.data
+        ? Array.isArray(data.data)
+          ? data.data
+          : [data.data]
+        : [];
+
       setItems(list);
     } catch (err) {
       console.error("Fetch kupon error:", err);
@@ -87,7 +122,9 @@ export default function Kupon() {
   }, [fetchList]);
 
   // form helpers
-  const onChange = (key, value) => setForm(s => ({ ...s, [key]: value }));
+  const onChange = (key, value) => {
+    setForm((s) => ({ ...s, [key]: value }));
+  };
 
   const validateForm = () => {
     setServerMessage(null);
@@ -99,6 +136,11 @@ export default function Kupon() {
     // kupon_type required and must be allowed
     if (!form.kupon_type || !allowedTypes.includes(form.kupon_type)) {
       return { ok: false, message: `kupon_type harus salah satu dari: ${allowedTypes.join(", ")}` };
+    }
+
+    // insentif must be allowed if provided
+    if (form.insentif && !allowedInsentif.includes(form.insentif)) {
+      return { ok: false, message: `insentif harus salah satu dari: ${allowedInsentif.join(", ")}` };
     }
 
     // For discount types, potongan must be > 0
@@ -144,7 +186,8 @@ export default function Kupon() {
       code: form.code.trim(),
       jumlah: Number(form.jumlah) || 0,
       minimal_pembelian: Number(form.minimal_pembelian) || 0,
-      potongan: (form.potongan !== "" && form.potongan != null) ? Number(form.potongan) : undefined,
+      potongan:
+        form.potongan !== "" && form.potongan != null ? Number(form.potongan) : undefined,
       insentif: form.insentif ? form.insentif : undefined,
       deskripsi: form.deskripsi ? form.deskripsi : undefined,
       kategori: form.kategori ? form.kategori : undefined,
@@ -164,29 +207,26 @@ export default function Kupon() {
         method = "PUT";
       }
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        credentials: "omit",
-        body: JSON.stringify(payload),
-      });
-
+      const res = await fetch(url, buildFetchOptions(method, payload));
       const text = await res.text();
       let data;
-      try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (e) {
+        data = null;
+      }
 
       if (!res.ok) {
         // try fallback update (if update by id not supported)
         if (method === "PUT" && res.status >= 400) {
-          const res2 = await fetch(API_UPDATE, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json", ...getAuthHeader() },
-            credentials: "omit",
-            body: JSON.stringify({ id: editing.id, ...payload }),
-          });
+          const res2 = await fetch(API_UPDATE, buildFetchOptions("PUT", { id: editing.id, ...payload }));
           const t2 = await res2.text();
           let d2;
-          try { d2 = t2 ? JSON.parse(t2) : null } catch(e){ d2 = null; }
+          try {
+            d2 = t2 ? JSON.parse(t2) : null;
+          } catch (e) {
+            d2 = null;
+          }
           if (!res2.ok) throw { status: res2.status, body: d2 ?? t2 };
         } else {
           throw { status: res.status, body: data ?? text };
@@ -214,15 +254,14 @@ export default function Kupon() {
     setError(null);
     setServerMessage(null);
     try {
-      const res = await fetch(API_DELETE, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        credentials: "omit",
-        body: JSON.stringify({ ids: idsArray }),
-      });
+      const res = await fetch(API_DELETE, buildFetchOptions("DELETE", { ids: idsArray }));
       const text = await res.text();
       let data;
-      try { data = text ? JSON.parse(text) : null } catch(e){ data=null; }
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (e) {
+        data = null;
+      }
 
       if (!res.ok) throw { status: res.status, body: data ?? text };
 
@@ -239,9 +278,10 @@ export default function Kupon() {
 
   // UI small helpers
   const toggleSelect = (id) => {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const s = new Set(prev);
-      if (s.has(id)) s.delete(id); else s.add(id);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
       return s;
     });
   };
@@ -270,7 +310,7 @@ export default function Kupon() {
     setShowModal(true);
   };
 
-  const filtered = items.filter(it => {
+  const filtered = items.filter((it) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (it.code || "").toLowerCase().includes(q) || (it.insentif || "").toLowerCase().includes(q);
@@ -281,10 +321,14 @@ export default function Kupon() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Kupon</h2>
         <div className="flex gap-2">
-          <button onClick={fetchList} className="px-3 py-2 bg-gray-200 rounded">Refresh</button>
+          {/* <button onClick={fetchList} className="px-3 py-2 bg-gray-200 rounded">Refresh</button> */}
           <button onClick={openCreate} className="px-4 py-2 bg-green-600 text-white rounded">+ Create Kupon</button>
           <button
-            onClick={() => { if (selectedIds.size===0) return alert("Pilih kupon dulu"); if (!confirm("Hapus selected kupon?")) return; doDelete(Array.from(selectedIds)); }}
+            onClick={() => {
+              if (selectedIds.size === 0) return alert("Pilih kupon dulu");
+              if (!confirm("Hapus selected kupon?")) return;
+              doDelete(Array.from(selectedIds));
+            }}
             className="px-3 py-2 bg-red-600 text-white rounded"
           >
             Delete Selected
@@ -293,13 +337,24 @@ export default function Kupon() {
       </div>
 
       <div className="mb-4 flex gap-3 items-center">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by code or insentif..." className="border rounded p-2 flex-1" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by code or insentif..."
+          className="border rounded p-2 flex-1"
+        />
         <div className="text-sm text-gray-600">Found: {filtered.length}</div>
       </div>
 
       {loading && <div className="text-gray-600 mb-4">Loading kupon...</div>}
       {serverMessage && (
-        <div className={`mb-4 p-3 rounded ${serverMessage.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-green-50 text-green-700 border border-green-200"}`}>
+        <div
+          className={`mb-4 p-3 rounded ${
+            serverMessage.type === "error"
+              ? "bg-red-50 text-red-700 border border-red-200"
+              : "bg-green-50 text-green-700 border border-green-200"
+          }`}
+        >
           {serverMessage.text}
         </div>
       )}
@@ -309,10 +364,16 @@ export default function Kupon() {
         <table className="w-full">
           <thead>
             <tr className="bg-blue-600 text-white text-left">
-              <th className="p-3"><input type="checkbox" onChange={e => {
-                if (e.target.checked) setSelectedIds(new Set(items.map(it => it.id)));
-                else setSelectedIds(new Set());
-              }} checked={selectedIds.size === items.length && items.length>0} /></th>
+              <th className="p-3">
+                <input
+                  type="checkbox"
+                  onChange={(e) => {
+                    if (e.target.checked) setSelectedIds(new Set(items.map((it) => it.id)));
+                    else setSelectedIds(new Set());
+                  }}
+                  checked={selectedIds.size === items.length && items.length > 0}
+                />
+              </th>
               <th className="p-3">#</th>
               <th className="p-3">Code</th>
               <th className="p-3">Tipe</th>
@@ -325,11 +386,17 @@ export default function Kupon() {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={9} className="p-4 text-center text-gray-500">No coupons found.</td></tr>
+              <tr>
+                <td colSpan={9} className="p-4 text-center text-gray-500">
+                  No coupons found.
+                </td>
+              </tr>
             ) : (
               filtered.map((k, idx) => (
                 <tr key={k.id ?? idx} className="border-b hover:bg-gray-50">
-                  <td className="p-3"><input type="checkbox" checked={selectedIds.has(k.id)} onChange={() => toggleSelect(k.id)} /></td>
+                  <td className="p-3">
+                    <input type="checkbox" checked={selectedIds.has(k.id)} onChange={() => toggleSelect(k.id)} />
+                  </td>
                   <td className="p-3">{idx + 1}</td>
                   <td className="p-3 font-mono">{k.code}</td>
                   <td className="p-3">{k.kupon_type}</td>
@@ -339,8 +406,18 @@ export default function Kupon() {
                   <td className="p-3">{k.insentif ?? "-"}</td>
                   <td className="p-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEdit(k)} className="px-2 py-1 bg-yellow-500 text-white rounded">Edit</button>
-                      <button onClick={() => { if (!confirm(`Hapus kupon ${k.code}?`)) return; doDelete([k.id]); }} className="px-2 py-1 bg-red-600 text-white rounded">Delete</button>
+                      <button onClick={() => openEdit(k)} className="px-2 py-1 bg-yellow-500 text-white rounded">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!confirm(`Hapus kupon ${k.code}?`)) return;
+                          doDelete([k.id]);
+                        }}
+                        className="px-2 py-1 bg-red-600 text-white rounded"
+                      >
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -357,7 +434,9 @@ export default function Kupon() {
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">{editing ? "Edit Kupon" : "Create Kupon"}</h3>
               <div>
-                <button onClick={() => { setShowModal(false); setEditing(null); }} className="px-3 py-1 bg-gray-200 rounded">Close</button>
+                <button onClick={() => { setShowModal(false); setEditing(null); }} className="px-3 py-1 bg-gray-200 rounded">
+                  Close
+                </button>
               </div>
             </div>
 
@@ -365,7 +444,11 @@ export default function Kupon() {
               <div>
                 <label className="block text-sm font-medium">Tipe Kupon</label>
                 <select value={form.kupon_type} onChange={(e) => onChange("kupon_type", e.target.value)} className="w-full border rounded p-2">
-                  {allowedTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  {allowedTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
                 <div className="text-xs text-gray-500 mt-1">Tipe harus sesuai: {allowedTypes.join(", ")}</div>
               </div>
@@ -394,7 +477,14 @@ export default function Kupon() {
 
                 <div>
                   <label className="block text-sm font-medium">Insentif</label>
-                  <input value={form.insentif} onChange={(e) => onChange("insentif", e.target.value)} className="w-full border rounded p-2" />
+                  <select value={form.insentif} onChange={(e) => onChange("insentif", e.target.value)} className="w-full border rounded p-2 bg-white">
+                    <option value="">-- Pilih Insentif --</option>
+                    {allowedInsentif.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -415,10 +505,13 @@ export default function Kupon() {
               </div>
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-                <button onClick={saveKupon} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded">{saving ? "Saving..." : (editing ? "Update" : "Create")}</button>
+                <button onClick={() => { setShowModal(false); setEditing(null); }} className="px-4 py-2 bg-gray-200 rounded">
+                  Cancel
+                </button>
+                <button onClick={saveKupon} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded">
+                  {saving ? "Saving..." : editing ? "Update" : "Create"}
+                </button>
               </div>
-
             </div>
           </div>
         </div>

@@ -238,9 +238,9 @@ export default function Karyawan() {
         <div className="flex items-center gap-3">
           {isLoggedIn ? (
             <>
-              <button onClick={() => fetchList()} className="px-3 py-2 bg-gray-200 rounded">Refresh</button>
+              {/* <button onClick={() => fetchList()} className="px-3 py-2 bg-gray-200 rounded">Refresh</button> */}
               <button onClick={openCreate} className="px-4 py-2 bg-green-600 text-white rounded">+ Create</button>
-              <button onClick={doLogout} className="px-3 py-2 bg-red-500 text-white rounded">Logout</button>
+              {/* <button onClick={doLogout} className="px-3 py-2 bg-red-500 text-white rounded">Logout</button> */}
             </>
           ) : (
             <div className="text-sm text-gray-600">Please login to manage karyawan</div>
